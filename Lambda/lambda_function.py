@@ -79,38 +79,52 @@ def close(session_attributes, fulfillment_state, message):
 
     return response
 
+def get_rec(level):
+    if level == "None":
+        rec = "100% bonds (AGG), 0% equities (SPY)"
+    elif level == "Low":
+        rec = "60% bonds (AGG), 40% equities (SPY)"
+    elif level == "Medium":
+        rec = "40% bonds (AGG), 60% equities (SPY)"
+    elif level == "High":
+        rec = "20% bonds (AGG), 80% equities (SPY)"
+    else:
+        rec = "Invalid Risk Level"
+    return rec
 
-"""
-Step 3: Enhance the Robo Advisor with an Amazon Lambda Function
+def validate_age(age,intent_request):
+    # Confirm age is between 0 and 65
+    if age is not None:
+        age = parse_int(age)
+        if age <= 0:
+            return build_validation_result(
+                False,
+                "age",
+                "The age cannot be negative."
+                "Please provide a valid age."
+            )
+        elif age >= 65:
+            return build_validation_result(
+                False,
+                "age",
+                "Unfortunately, age cannot be above 65."
+                "We may only assist if you are under the age of 65."
+            )
+    return build_validation_result(True,None,None)
 
-In this section, you will create an Amazon Lambda function that will validate the data provided by the user on the Robo Advisor.
-
-1. Start by creating a new Lambda function from scratch and name it `recommendPortfolio`. Select Python 3.7 as runtime.
-
-2. In the Lambda function code editor, continue by deleting the AWS generated default lines of code, then paste in the starter code provided in `lambda_function.py`.
-
-3. Complete the `recommend_portfolio()` function by adding these validation rules:
-
-    * The `age` should be greater than zero and less than 65.
-    * The `investment_amount` should be equal to or greater than 5000.
-
-4. Once the intent is fulfilled, the bot should respond with an investment recommendation based on the selected risk level as follows:
-
-    * **none:** "100% bonds (AGG), 0% equities (SPY)"
-    * **low:** "60% bonds (AGG), 40% equities (SPY)"
-    * **medium:** "40% bonds (AGG), 60% equities (SPY)"
-    * **high:** "20% bonds (AGG), 80% equities (SPY)"
-
-> **Hint:** Be creative while coding your solution, you can have all the code on the `recommend_portfolio()` function, or you can split the functionality across different functions, put your Python coding skills in action!
-
-5. Once you finish coding your Lambda function, test it using the sample test events provided for this Challenge.
-
-6. After successfully testing your code, open the Amazon Lex Console and navigate to the `recommendPortfolio` bot configuration, integrate your new Lambda function by selecting it in the “Lambda initialization and validation” and “Fulfillment” sections.
-
-7. Build your bot, and test it with valid and invalid data for the slots.
-
-"""
-
+def validate_investment_amount(investmentAmount,intent_request):
+    # Validate the age to be between 0 and 65
+    if investmentAmount is not None:
+        investmentAmount = parse_int(investmentAmount)
+        if investmentAmount < 5000:
+            # error message for lower investment threshold
+            return build_validation_result(
+                False,
+                "investmentAmount",
+                "Unfortunately, this investment amount is too low."
+                "Please enter an investment amount no less than $5,000."
+            )
+    return build_validation_result(True,None,None)
 
 ### Intents Handlers ###
 def recommend_portfolio(intent_request):
@@ -124,7 +138,50 @@ def recommend_portfolio(intent_request):
     risk_level = get_slots(intent_request)["riskLevel"]
     source = intent_request["invocationSource"]
 
-    # YOUR CODE GOES HERE!
+    if source == "DialogCodeHook":
+        # Get slots
+        slots = get_slots(intent_request)
+
+        # Validate age input
+        validation_result = validate_age(age,intent_request)
+
+        if not validation_result["isValid"]:
+            slots[validation_result["violatedSlot"]] = None # Cleans the invalide slot
+
+            return elicit_slot(
+                intent_request["sessionAttributes"],
+                intent_request["currentIntent"]["name"],
+                slots,
+                validation_result["violatedSlot"],
+                validation_result["message"],
+            )
+
+        investment_amount = validate_investment_amount(investment_amount,intent_request)
+
+        if not investment_amount["isValid"]:
+            slots[investment_amount["violatedSlot"]] = None # Cleans the invalide slot
+
+            return elicit_slot(
+                intent_request["sessionAttributes"],
+                intent_request["currentIntent"]["name"],
+                slots,
+                investment_amount["violatedSlot"],
+                investment_amount["message"],
+            )
+
+        output_session_attributes = intent_request["sessionAttributes"]
+
+    rec = get_rec(risk_level)
+
+    return close(
+        intent_request["sessionAttributes"],
+        "Fulfilled",
+        {
+            "contentType": "PlainText",
+            "content": """Thank you, {}, you should allocate your funds like so: {}"""
+            .format(first_name,rec),
+        },
+    )
 
 
 ### Intents Dispatcher ###
